@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sokoban Trainer — CMSC 221</title>
+<meta name="description" content="Playable Sokoban levels from the NYU CS-GY6613 Sokoban environment, with an A* solver you can watch.">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23d9a04a'/><rect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23b9812f' stroke-width='3'/></svg>">
+</head>
+<body>
+<div class="wrap">
+
+  <header class="site">
+    <div>
+      <h1>Sokoban Trainer</h1>
+      <p>
+        The 121 levels from the NYU CS-GY6613 Sokoban environment, playable in the browser.
+        Push every crate onto a goal. Each level also ships with the A* agent's own solution,
+        so you can compare your move count against the search — or watch it solve.
+      </p>
+    </div>
+    <button class="theme-toggle" id="themeBtn" type="button">Dark mode</button>
+  </header>
+
+  <div class="layout">
+
+    <!-- ------------------------------------------------------------ play -->
+    <main class="card stage">
+      <div class="stage-head">
+        <h2 class="stage-title" id="levelTitle">Level 0</h2>
+        <div class="stats">
+          <span>moves <b id="statMoves">0</b></span>
+          <span>pushes <b id="statPushes">0</b></span>
+          <span>par <b id="statPar">–</b></span>
+          <span>best <b id="statBest">–</b></span>
+        </div>
+      </div>
+
+      <div class="board-frame">
+        <div class="board" id="board" tabindex="0" aria-label="Sokoban board"></div>
+        <div class="win" id="winOverlay" hidden>
+          <div>
+            <h3 id="winTitle">Solved</h3>
+            <p id="winSub"></p>
+            <button class="btn primary" id="winNext" type="button">Next level</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="btnUndo" type="button">Undo</button>
+        <button class="btn" id="btnReset" type="button">Reset</button>
+        <span class="spacer"></span>
+        <button class="btn" id="btnHint" type="button">Hint</button>
+        <button class="btn" id="btnSolve" type="button">Watch A* solve</button>
+        <span class="spacer"></span>
+        <button class="btn" id="btnPrev" type="button">&larr; Prev</button>
+        <button class="btn" id="btnNext" type="button">Next &rarr;</button>
+      </div>
+
+      <div class="solve-note" id="solveNote"></div>
+
+      <div class="dpad">
+        <button class="up"    data-dx="0"  data-dy="-1" type="button" aria-label="Up">&uarr;</button>
+        <button class="left"  data-dx="-1" data-dy="0"  type="button" aria-label="Left">&larr;</button>
+        <button class="down"  data-dx="0"  data-dy="1"  type="button" aria-label="Down">&darr;</button>
+        <button class="right" data-dx="1"  data-dy="0"  type="button" aria-label="Right">&rarr;</button>
+      </div>
+
+      <div class="keyhint">
+        <kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd> or <kbd>WASD</kbd> move
+        &nbsp;·&nbsp; <kbd>U</kbd> undo &nbsp;·&nbsp; <kbd>R</kbd> reset
+        &nbsp;·&nbsp; <kbd>N</kbd>/<kbd>P</kbd> next / previous level
+      </div>
+    </main>
+
+    <!-- --------------------------------------------------------- sidebar -->
+    <aside class="card side">
+      <h2>Levels</h2>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabMain" aria-selected="true"  data-set="main_levels" type="button">Main · 100</button>
+        <button role="tab" id="tabGen"  aria-selected="false" data-set="gen_levels"  type="button">Generated · 21</button>
+      </div>
+
+      <div class="filters" id="filters">
+        <button class="chip" data-tier="0" aria-pressed="true"  type="button">All</button>
+        <button class="chip" data-tier="1" aria-pressed="false" type="button">Warm-up</button>
+        <button class="chip" data-tier="2" aria-pressed="false" type="button">Easy</button>
+        <button class="chip" data-tier="3" aria-pressed="false" type="button">Medium</button>
+        <button class="chip" data-tier="4" aria-pressed="false" type="button">Tricky</button>
+      </div>
+
+      <div class="level-grid" id="levelGrid"></div>
+
+      <div class="legend">
+        <span><i style="background:var(--t1)"></i>warm-up</span>
+        <span><i style="background:var(--t2)"></i>easy</span>
+        <span><i style="background:var(--t3)"></i>medium</span>
+        <span><i style="background:var(--t4)"></i>tricky</span>
+      </div>
+
+      <div class="progress">
+        <span id="progressText">0 solved</span>
+        <button id="btnClear" type="button">reset progress</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ------------------------------------------------------------- notes -->
+  <section class="card notes">
+    <h2>How to read a level</h2>
+    <table>
+      <tr><td>#</td><td>wall</td></tr>
+      <tr><td>@ &nbsp;/&nbsp; +</td><td>you, on floor / standing on a goal</td></tr>
+      <tr><td>$ &nbsp;/&nbsp; *</td><td>crate, on floor / already on a goal</td></tr>
+      <tr><td>.</td><td>goal</td></tr>
+    </table>
+    <p>
+      These are the same <code>.txt</code> maps the Python environment loads from
+      <code>assets/main_levels/</code> and <code>assets/gen_levels/</code>, so anything you solve
+      here is a level your agent will be graded on. You can only <em>push</em> crates, never pull
+      them — a crate shoved into a corner is stuck for good, and that is exactly the situation the
+      solver's deadlock check is built to avoid expanding.
+    </p>
+    <h2>About "par" and the solver</h2>
+    <p>
+      <b>Par</b> is the length of the solution found by the A* agent ported from
+      <code>agent_master.py</code>: weighted A* with <code>f = h + 0.5·g</code>, a greedy
+      nearest-goal Manhattan heuristic, and corner/wall deadlock pruning. It is a strong solution
+      but not a proof of the optimum, so beating par is possible — and worth bragging about.
+      <b>Hint</b> re-runs the search from wherever you are now, which is also how you find out you
+      have pushed yourself into an unwinnable position.
+    </p>
+    <p style="margin-top:14px;font-size:12.5px;color:var(--ink-faint)">
+      Levels and game rules from the NYU CS-GY6613 Sokoban environment. Engine and solver ported
+      to JavaScript for CMSC 221.
+    </p>
+  </section>
+
+</div>
+
+<script src="sokoban.js"></script>
+<script src="levels.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
